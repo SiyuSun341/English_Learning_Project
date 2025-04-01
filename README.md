@@ -60,16 +60,16 @@ Copy
 - Internet connection for API calls
 
 ## Project Structure
-.
-├── app.py                   # Main Streamlit application
-├── requirements.txt         # Python dependencies
-├── .env                     # Environment variables (not in repository)
-├── static/                  # Static assets
-│   └── audio/               # Audio recordings storage
-└── utils/                   # Utility modules
-    ├── __init__.py          # Package initialization
-    ├── language_model.py    # Language model interactions
-    └── speech_to_text.py    # Speech recognition functionality
+    .
+    ├── app.py                   # Main Streamlit application
+    ├── requirements.txt         # Python dependencies
+    ├── .env                     # Environment variables (not in repository)
+    ├── static/                  # Static assets
+    │   └── audio/               # Audio recordings storage
+    └── utils/                   # Utility modules
+    ├── init.py                  # Package initialization
+    ├── language_model.py        # Language model interactions
+    └── speech_to_text.py        # Speech recognition functionality
 
 ## Upcoming Features
 
