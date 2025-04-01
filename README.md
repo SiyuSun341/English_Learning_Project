@@ -67,10 +67,10 @@ Copy
 ├── static/                  # Static assets
 │   └── audio/               # Audio recordings storage
 └── utils/                   # Utility modules
-├── init.py          # Package initialization
-├── language_model.py    # Language model interactions
-└── speech_to_text.py    # Speech recognition functionality
-Copy
+    ├── __init__.py          # Package initialization
+    ├── language_model.py    # Language model interactions
+    └── speech_to_text.py    # Speech recognition functionality
+
 ## Upcoming Features
 
 - User authentication and profile management
