@@ -1,85 +1,127 @@
-Interactive English Learning
-An AI-powered application for improving English reading comprehension and speaking skills through interactive exercises and feedback.
-Overview
-This project combines several AI technologies to create an interactive English learning experience:
+# Interactive English Learning
 
-Reading Comprehension: Upload or select English passages and generate comprehension questions using AI
-Speech Recognition: Record your answers using your microphone or upload audio files
-Intelligent Feedback: Receive detailed analysis of your answers, including content accuracy and grammar suggestions
+An AI-powered application for improving English reading comprehension and speaking skills through interactive exercises, personalized feedback, and vocabulary management.
 
-Features
+## Overview
 
-AI-generated comprehension questions based on any English text
-Text and voice input options for answering questions
-Detailed feedback on answers with grammar and content suggestions
-Navigation between questions with session state preservation
-Speech-to-text conversion using OpenAI's Whisper API
+This project combines several AI technologies to create a comprehensive English learning experience:
 
-Installation
+- **Reading Comprehension**: Generate AI-powered questions from any English passage
+- **Speech Recognition**: Record answers using your microphone or upload audio files
+- **Intelligent Feedback**: Receive detailed analysis with a robust scoring system
+- **Vocabulary Management**: Build and organize your vocabulary with automatic definitions
+- **Progress Tracking**: Review your learning history and performance over time
 
-Clone this repository:
-Copygit clone https://github.com/YourUsername/interactive-english-learning.git
+## Features
+
+### Core Functionality
+- AI-generated comprehension questions based on any English text
+- Text and voice input options for answering questions
+- Detailed feedback with multi-dimensional scoring (Accuracy, Completeness, Clarity, Language Quality)
+- Specific grammar and spelling error identification with corrections
+- Session state preservation to maintain progress
+
+### User Management
+- User registration and authentication system
+- Secure password storage with bcrypt encryption
+- Personalized learning history tracking
+- MongoDB integration for data persistence
+
+### Vocabulary System
+- Smart vocabulary notebook with deduplication
+- Automatic word definitions and example generation
+- Tracking word frequency and usage
+- Source passage reference for context
+- Words prioritized by frequency of addition
+
+### Speech Recognition
+- Browser-based recording using Web Speech API
+- Audio file upload support
+- OpenAI Whisper API integration for accurate transcription
+
+## Installation
+
+1. Clone this repository:
+```
+git clone https://github.com/YourUsername/interactive-english-learning.git
 cd interactive-english-learning
+```
 
-Create a virtual environment and activate it:
-Copypython -m venv venv
+2. Create a virtual environment and activate it:
+```
+python -m venv venv
+
 # On Windows
 venv\Scripts\activate
+
 # On macOS/Linux
 source venv/bin/activate
+```
 
-Install the required packages:
-Copypip install -r requirements.txt
+3. Install the required packages:
+```
+pip install -r requirements.txt
+```
 
-Create a .env file in the project root and add your OpenAI API key:
-CopyOPENAI_API_KEY=your_openai_api_key_here
+4. Create a `.env` file in the project root and add your API keys:
+```
+OPENAI_API_KEY=your_openai_api_key_here
+MONGODB_URI=your_mongodb_connection_string_here
+```
 
+## Usage
 
-Usage
+1. Run the Streamlit application:
+```
+streamlit run app.py
+```
 
-Run the Streamlit application:
-Copystreamlit run app.py
+2. Open your web browser and navigate to http://localhost:8501
 
-Open your web browser and navigate to http://localhost:8501
-Enter or select an English passage for reading comprehension
-Generate questions by clicking the "Generate Questions" button
-Answer questions by typing in the text area or using the voice recording feature
-Submit your answers to receive AI-powered feedback
+3. Register an account or log in
 
-Requirements
+4. Choose a feature from the sidebar:
+   - **Practice Reading**: Work on reading comprehension exercises
+   - **Learning History**: Review past sessions and performance
+   - **Vocabulary Notebook**: Manage your personal vocabulary collection
 
-Python 3.7+
-OpenAI API key
-Web browser with microphone access (for voice recording feature)
-Internet connection for API calls
-
-Project Structure
-Copy.
+## Project Structure
+```
+.
 ├── app.py                   # Main Streamlit application
 ├── requirements.txt         # Python dependencies
 ├── .env                     # Environment variables (not in repository)
-├── static/                  # Static assets
-│   └── audio/               # Audio recordings storage
-└── utils/                   # Utility modules
-    ├── __init__.py          # Package initialization
-    ├── language_model.py    # Language model interactions
-    └── speech_to_text.py    # Speech recognition functionality
-Upcoming Features
+├── utils/                   # Utility modules
+│   ├── __init__.py          # Package initialization
+│   ├── auth.py              # Authentication functionality
+│   ├── database.py          # MongoDB database operations
+│   ├── language_model.py    # Language model interactions
+│   ├── speech_input.py      # Speech input component
+│   └── speech_to_text.py    # Speech recognition functionality
+```
 
-User authentication and profile management
-Vocabulary notebook for saving and reviewing new words
-Personalized review schedule based on performance
-Progress tracking and analytics
-Enhanced user interface with customization options
+## Technologies Used
 
-Technologies Used
+- **Streamlit**: Web application framework
+- **MongoDB**: Database for user data and learning history
+- **LangChain**: Language model integration and prompt engineering
+- **OpenAI API**: 
+  - GPT models for question generation and answer analysis
+  - Whisper API for speech-to-text conversion
+- **Web Speech API**: Browser-based speech recognition
+- **bcrypt**: Secure password hashing
 
-Streamlit: Web application framework
-LangChain: Language model integration
-OpenAI API: GPT models for question generation and answer analysis
-OpenAI Whisper API: Speech-to-text conversion
+## Future Enhancements
 
-License
+- Spaced repetition system for vocabulary review
+- Enhanced data visualization for learning analytics
+- Mobile-responsive design improvements
+- Customizable learning focus areas
+- Social features for learning communities
+- Offline mode for practice without internet
+
+## License
 [Add your license information here]
-Contributing
+
+## Contributing
 Contributions are welcome! Please feel free to submit a Pull Request.

@@ -357,7 +357,11 @@ def vocabulary_notebook(db, user_id):
             # Display vocabulary items without using nested expanders
             for idx, item in enumerate(vocab_items):
                 with st.container():
-                    st.markdown(f"### {idx+1}. {item['word']}")
+                    # Word header with add count if more than 1
+                    add_count = item.get('add_count', 1)
+                    add_count_display = f" (Added {add_count} times)" if add_count > 1 else ""
+                    
+                    st.markdown(f"### {idx+1}. {item['word']}{add_count_display}")
                     st.write(f"**Definition:** {item['definition']}")
                     
                     st.write("**Examples:**")
@@ -405,6 +409,12 @@ def vocabulary_notebook(db, user_id):
                         except Exception as e:
                             st.error(f"Error getting definition: {str(e)}")
                 
+                # Check if the word already exists
+                existing_vocab = db.vocabulary.find_one({
+                    "user_id": user_id,
+                    "word": word
+                })
+                
                 # Save to database
                 try:
                     result = db.save_vocabulary_item(
@@ -416,7 +426,14 @@ def vocabulary_notebook(db, user_id):
                     )
                     
                     if result:
-                        st.success(f"'{word}' added to your vocabulary notebook!")
+                        if existing_vocab:
+                            # Word was updated, show appropriate message
+                            add_count = result.get("add_count", 2)  # Should be at least 2 if it existed before
+                            st.success(f"'{word}' already exists in your vocabulary notebook and has been updated. Added {add_count} times in total.")
+                        else:
+                            # New word was added
+                            st.success(f"'{word}' added to your vocabulary notebook!")
+                        
                         # Clear form
                         st.experimental_rerun()
                     else:

@@ -172,7 +172,7 @@ class Database:
     
     def save_vocabulary_item(self, user_id, word, definition, examples, source_passage="", source_question=""):
         """
-        Save a vocabulary item for a user
+        Save a vocabulary item for a user with deduplication
         
         Args:
             user_id: User's ID
@@ -186,33 +186,73 @@ class Database:
             dict: Vocabulary document or None if saving failed
         """
         try:
-            # Create vocabulary document
-            vocab_item = {
+            # Check if this word already exists for this user
+            existing_item = self.vocabulary.find_one({
                 "user_id": user_id,
-                "word": word,
-                "definition": definition,
-                "examples": examples,
-                "source_passage": source_passage,
-                "source_question": source_question,
-                "created_at": datetime.now(),
-                "review_count": 0,
-                "last_review": None,
-                "next_review": None
-            }
+                "word": word
+            })
             
-            # Insert vocabulary item to database
-            result = self.vocabulary.insert_one(vocab_item)
-            
-            # Return vocabulary document
-            return self.vocabulary.find_one({"_id": result.inserted_id})
-            
+            if existing_item:
+                # Word exists, update count and potentially other fields
+                add_count = existing_item.get("add_count", 1) + 1
+                
+                # Update the existing item
+                updated_item = {
+                    "$set": {
+                        "add_count": add_count,
+                        "last_add_date": datetime.now()
+                    }
+                }
+                
+                # Update definition and examples if provided
+                if definition:
+                    updated_item["$set"]["definition"] = definition
+                
+                if examples:
+                    updated_item["$set"]["examples"] = examples
+                    
+                # Update source if provided
+                if source_passage:
+                    updated_item["$set"]["source_passage"] = source_passage
+                
+                if source_question:
+                    updated_item["$set"]["source_question"] = source_question
+                
+                # Perform the update
+                self.vocabulary.update_one({"_id": existing_item["_id"]}, updated_item)
+                
+                # Return the updated document
+                return self.vocabulary.find_one({"_id": existing_item["_id"]})
+            else:
+                # Create new vocabulary document
+                vocab_item = {
+                    "user_id": user_id,
+                    "word": word,
+                    "definition": definition,
+                    "examples": examples,
+                    "source_passage": source_passage,
+                    "source_question": source_question,
+                    "created_at": datetime.now(),
+                    "last_add_date": datetime.now(),
+                    "add_count": 1,
+                    "review_count": 0,
+                    "last_review": None,
+                    "next_review": None
+                }
+                
+                # Insert vocabulary item to database
+                result = self.vocabulary.insert_one(vocab_item)
+                
+                # Return vocabulary document
+                return self.vocabulary.find_one({"_id": result.inserted_id})
+                
         except Exception as e:
             print(f"Error saving vocabulary item: {str(e)}")
             return None
     
     def get_user_vocabulary(self, user_id):
         """
-        Get all vocabulary items for a user
+        Get all vocabulary items for a user, sorted by add_count (descending) and then word (ascending)
         
         Args:
             user_id: User's ID
@@ -221,8 +261,13 @@ class Database:
             list: List of vocabulary documents
         """
         try:
-            # Find vocabulary items by user_id
-            vocab_items = list(self.vocabulary.find({"user_id": user_id}))
+            # Find vocabulary items by user_id and sort them
+            vocab_items = list(self.vocabulary.find(
+                {"user_id": user_id}
+            ).sort([
+                ("add_count", -1),  # Sort by add_count in descending order (highest first)
+                ("word", 1)          # Then sort alphabetically
+            ]))
             return vocab_items
             
         except Exception as e:
