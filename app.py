@@ -4,9 +4,14 @@ import streamlit.components.v1 as components
 from dotenv import load_dotenv
 import os
 import json
-from utils.language_model import generate_questions, analyze_answer
 import tempfile
 from openai import OpenAI
+from datetime import datetime
+import time
+
+from utils.language_model import generate_questions, analyze_answer, get_word_definition
+from utils.auth import init_auth_state, login_page, register_page, logout
+from utils.database import Database
 
 # Load environment variables
 load_dotenv()
@@ -189,86 +194,237 @@ def speech_recognition_component():
     # Return any transcript that was stored in session state
     return st.session_state.get("speech_transcript", "")
 
-def main():
-    st.title("Interactive English Learning")
+def transcribe_with_whisper(audio_file):
+    """
+    Transcribe audio using OpenAI's Whisper API
     
-    # Initialize session state variables if they don't exist
-    if 'questions' not in st.session_state:
-        st.session_state.questions = []
-    if 'current_passage' not in st.session_state:
-        st.session_state.current_passage = DEFAULT_PASSAGE
-    if 'current_question_idx' not in st.session_state:
-        st.session_state.current_question_idx = 0
-    if 'answers' not in st.session_state:
-        st.session_state.answers = {}
-    if 'feedback' not in st.session_state:
-        st.session_state.feedback = {}
-    if 'speech_transcript' not in st.session_state:
-        st.session_state.speech_transcript = ""
-    
-    # Handle speech recognition messages from JavaScript
-    if 'speech_transcript' in st.query_params:
-        transcript = st.query_params['speech_transcript']
-        if transcript:
-            st.session_state.speech_transcript = transcript
-            # Clear the query param to avoid issues with refreshes
-            del st.query_params['speech_transcript']
-    
-    # Sidebar configuration
-    st.sidebar.header("Settings")
-    api_key = st.sidebar.text_input("OpenAI API Key", 
-                                   value=os.getenv("OPENAI_API_KEY", ""), 
-                                   type="password")
-    if api_key:
-        os.environ["OPENAI_API_KEY"] = api_key
-    
-    # If we don't have questions yet, show the passage input and question generation interface
-    if not st.session_state.questions:
-        # Article input
-        st.header("Reading Material")
-        passage = st.text_area("Enter or paste an English passage", value=DEFAULT_PASSAGE, height=200)
+    Args:
+        audio_file: Audio file uploaded by the user
         
-        num_questions = st.slider("Number of questions to generate", 1, 5, 3)
+    Returns:
+        str: Transcribed text
+    """
+    try:
+        # Create a temporary file to store the audio
+        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio_file:
+            temp_audio_file.write(audio_file.getvalue())
+            temp_audio_file_path = temp_audio_file.name
         
-        if st.button("Generate Questions"):
-            if not passage.strip():
-                st.warning("Please enter a passage")
-                return
-                
-            with st.spinner("Generating questions..."):
-                try:
-                    # Use the question generation function
-                    questions = generate_questions(passage, num_questions)
-                    
-                    # Save to session state
-                    st.session_state.questions = questions
-                    st.session_state.current_passage = passage
-                    st.session_state.current_question_idx = 0
-                    
-                    # Force a rerun to update the UI
-                    st.rerun()
-                    
-                except Exception as e:
-                    st.error(f"Error generating questions: {str(e)}")
-                    st.error("Please make sure your OpenAI API key is valid and has sufficient credits.")
+        # Use OpenAI's Whisper API to transcribe the audio
+        client = OpenAI()
+        
+        with open(temp_audio_file_path, "rb") as audio_file:
+            transcription = client.audio.transcriptions.create(
+                model="whisper-1",
+                file=audio_file
+            )
+        
+        # Clean up the temporary file
+        os.unlink(temp_audio_file_path)
+        
+        return transcription.text
     
-    # If we have questions, show the Q&A interface
-    else:
-        # Show Q&A interface
-        show_qa_interface()
-        
-        # Add reset button at the bottom
-        if st.button("Reset and Generate New Questions"):
-            # Clear session state
-            st.session_state.questions = []
-            st.session_state.answers = {}
-            st.session_state.feedback = {}
-            st.session_state.current_question_idx = 0
-            
-            # Force a rerun to refresh the UI
-            st.rerun()
+    except Exception as e:
+        st.error(f"Error during transcription: {str(e)}")
+        return None
 
-def show_qa_interface():
+def save_session(db, user_id):
+    """Save the current learning session to the database"""
+    if 'questions' in st.session_state and st.session_state.questions:
+        # Only save if there are questions and answers
+        if st.session_state.answers:
+            # Calculate session score
+            total_score = 0
+            answered_questions = 0
+            
+            # Iterate through all feedback
+            for idx in range(len(st.session_state.questions)):
+                idx_str = str(idx)
+                if idx_str in st.session_state.feedback:
+                    feedback = st.session_state.feedback[idx_str]
+                    if isinstance(feedback, dict) and "data" in feedback:
+                        # New format
+                        total_score += feedback["data"].get("total_score", 0)
+                    else:
+                        # Try to extract score from old format
+                        try:
+                            # Look for "Total Score: X/10" pattern
+                            if isinstance(feedback, str) and "Total Score:" in feedback:
+                                score_part = feedback.split("Total Score:")[1].strip()
+                                score = int(score_part.split("/")[0].strip())
+                                total_score += score
+                            else:
+                                # Default score if can't extract
+                                total_score += 5
+                        except:
+                            total_score += 5
+                    
+                    answered_questions += 1
+            
+            # Calculate average score (out of 100)
+            session_score = 0
+            if answered_questions > 0:
+                avg_score = total_score / answered_questions
+                session_score = int(avg_score * 10)  # Convert to 0-100 scale
+            
+            # Save the session with score
+            db.save_learning_session(
+                user_id=user_id,
+                passage=st.session_state.current_passage,
+                questions=st.session_state.questions,
+                answers=st.session_state.answers,
+                feedback=st.session_state.feedback,
+                score=session_score
+            )
+            return True
+    return False
+
+def show_history(db, user_id):
+    """Show user's learning history"""
+    st.header("Your Learning History")
+    
+    # Get user's learning sessions
+    sessions = db.get_user_learning_sessions(user_id)
+    
+    if not sessions:
+        st.info("You haven't completed any learning sessions yet.")
+        return
+    
+    # Display sessions in reverse chronological order
+    for idx, session in enumerate(sorted(sessions, key=lambda x: x.get('created_at', ''), reverse=True)):
+        created_at = session.get('created_at', datetime.now())
+        formatted_date = created_at.strftime("%B %d, %Y at %I:%M %p")
+        
+        with st.expander(f"Session {idx+1} - {formatted_date}"):
+            # Calculate statistics
+            num_questions = len(session.get('questions', []))
+            num_answered = len(session.get('answers', {}))
+            score = session.get('score', 0)
+            
+            # Show session stats
+            st.write(f"**Questions:** {num_questions}")
+            st.write(f"**Questions Answered:** {num_answered}")
+            st.write(f"**Score:** {score}/100")
+            
+            # Add a button to show details
+            if st.button(f"View Details", key=f"view_details_{idx}"):
+                st.subheader("Reading Passage")
+                st.write(session.get('passage', 'No passage available'))
+                
+                st.subheader("Questions and Answers")
+                questions = session.get('questions', [])
+                answers = session.get('answers', {})
+                feedback = session.get('feedback', {})
+                
+                for q_idx, question in enumerate(questions):
+                    st.markdown(f"**Question {q_idx+1}:** {question}")
+                    
+                    # Show answer if available
+                    if str(q_idx) in answers:
+                        st.markdown(f"**Your Answer:** {answers[str(q_idx)]}")
+                    else:
+                        st.write("You did not answer this question.")
+                    
+                    # Show feedback if available
+                    if str(q_idx) in feedback:
+                        feedback_item = feedback[str(q_idx)]
+                        st.subheader("Feedback:")
+                        
+                        # Check if feedback is in the new format or old format
+                        if isinstance(feedback_item, dict) and "formatted_feedback" in feedback_item:
+                            # Display the formatted feedback
+                            st.markdown(feedback_item["formatted_feedback"])
+                        else:
+                            # Display legacy format feedback
+                            st.markdown(f"**Feedback:** {feedback_item}")
+                    
+                    st.markdown("---")
+
+def vocabulary_notebook(db, user_id):
+    """Show and manage vocabulary notebook"""
+    st.header("Vocabulary Notebook")
+    
+    # Tabs for different vocabulary functions
+    tab1, tab2 = st.tabs(["My Vocabulary", "Add New Word"])
+    
+    with tab1:
+        # Get user's vocabulary
+        vocab_items = db.get_user_vocabulary(user_id)
+        
+        if not vocab_items:
+            st.info("Your vocabulary notebook is empty. Add words to start learning!")
+        else:
+            # Display vocabulary items without using nested expanders
+            for idx, item in enumerate(vocab_items):
+                with st.container():
+                    st.markdown(f"### {idx+1}. {item['word']}")
+                    st.write(f"**Definition:** {item['definition']}")
+                    
+                    st.write("**Examples:**")
+                    for example in item['examples']:
+                        st.write(f"- {example}")
+                    
+                    # Show source if available in a simple collapsible section (not an expander)
+                    if item.get('source_passage'):
+                        if st.checkbox(f"Show Source Passage for '{item['word']}'", key=f"source_{idx}"):
+                            st.text_area("Source Passage", item['source_passage'], height=100, key=f"source_text_{idx}", disabled=True)
+                    
+                    # Add review button
+                    if st.button(f"Mark as Reviewed", key=f"review_{idx}"):
+                        # Update review count and dates in database
+                        # (This functionality would need to be added to the database class)
+                        st.success(f"'{item['word']}' marked as reviewed!")
+                    
+                    # Add a divider between words
+                    st.markdown("---")
+    
+    with tab2:
+        # Form to add new vocabulary
+        with st.form("add_vocab_form"):
+            word = st.text_input("Word")
+            definition = st.text_area("Definition (optional)")
+            examples = st.text_area("Example sentences (one per line, optional)")
+            source = st.text_area("Source (optional)")
+            
+            submit = st.form_submit_button("Add to Notebook")
+            
+            if submit and word:
+                # Process examples
+                example_list = [ex.strip() for ex in examples.split('\n') if ex.strip()]
+                
+                # If definition is empty, try to get it from OpenAI
+                if not definition or not example_list:
+                    with st.spinner("Getting word definition..."):
+                        try:
+                            word_info = get_word_definition(word)
+                            if word_info:
+                                if not definition:
+                                    definition = word_info.get('definition', '')
+                                if not example_list:
+                                    example_list = word_info.get('examples', [])
+                        except Exception as e:
+                            st.error(f"Error getting definition: {str(e)}")
+                
+                # Save to database
+                try:
+                    result = db.save_vocabulary_item(
+                        user_id=user_id,
+                        word=word,
+                        definition=definition,
+                        examples=example_list,
+                        source_passage=source
+                    )
+                    
+                    if result:
+                        st.success(f"'{word}' added to your vocabulary notebook!")
+                        # Clear form
+                        st.experimental_rerun()
+                    else:
+                        st.error("Failed to add word to notebook.")
+                except Exception as e:
+                    st.error(f"Error saving to database: {str(e)}")
+
+def show_qa_interface(db):
     """Show the Q&A interface for answering and getting feedback"""
     # Get current question
     questions = st.session_state.questions
@@ -293,7 +449,7 @@ def show_qa_interface():
     st.write(questions[current_idx])
     
     # Get saved answer if any
-    saved_answer = st.session_state.answers.get(current_idx, "")
+    saved_answer = st.session_state.answers.get(str(current_idx), "")
     
     # Answer text area
     user_answer = st.text_area(
@@ -302,6 +458,26 @@ def show_qa_interface():
         height=150,
         key=f"answer_{current_idx}"
     )
+    
+    # Add "Save to Vocabulary" feature for text selection
+    if st.session_state.user:
+        selected_word = st.text_input("Add word to vocabulary (select text from passage or question):", 
+                                      key="selected_word")
+        if selected_word and st.button("Add to Vocabulary"):
+            with st.spinner("Adding to vocabulary..."):
+                # Get definition
+                word_info = get_word_definition(selected_word)
+                if word_info:
+                    # Save to database
+                    db.save_vocabulary_item(
+                        user_id=st.session_state.user["_id"],
+                        word=selected_word,
+                        definition=word_info.get('definition', ''),
+                        examples=word_info.get('examples', []),
+                        source_passage=st.session_state.current_passage,
+                        source_question=questions[current_idx]
+                    )
+                    st.success(f"'{selected_word}' added to your vocabulary notebook!")
     
     # Speech recognition section
     st.write("Or record your answer:")
@@ -353,7 +529,7 @@ def show_qa_interface():
                 return
                 
             # Save the answer
-            st.session_state.answers[current_idx] = user_answer
+            st.session_state.answers[str(current_idx)] = user_answer
             
             with st.spinner("Analyzing your answer..."):
                 try:
@@ -365,7 +541,11 @@ def show_qa_interface():
                     )
                     
                     # Save the feedback
-                    st.session_state.feedback[current_idx] = feedback
+                    st.session_state.feedback[str(current_idx)] = feedback
+                    
+                    # Auto-save if user is logged in
+                    if st.session_state.authenticated and st.session_state.user:
+                        save_session(db, st.session_state.user["_id"])
                     
                     # Force a rerun to update the UI
                     st.rerun()
@@ -374,9 +554,44 @@ def show_qa_interface():
                     st.error(f"Error analyzing answer: {str(e)}")
     
     # Display feedback if available
-    if current_idx in st.session_state.feedback:
+    if str(current_idx) in st.session_state.feedback:
         st.subheader("Feedback:")
-        st.markdown(st.session_state.feedback[current_idx])
+        
+        feedback = st.session_state.feedback[str(current_idx)]
+        
+        # Check if feedback is in the new format or old format
+        if isinstance(feedback, dict) and "formatted_feedback" in feedback:
+            # Display the formatted feedback
+            st.markdown(feedback["formatted_feedback"])
+            
+            # Show scoring rubric in an expander
+            with st.expander("View Scoring Rubric"):
+                st.markdown("""
+                ### Reading Comprehension Scoring System
+                
+                Total per question: **10 points** across the following dimensions:
+                
+                | Scoring Dimension | Max Points | Description |
+                | --- | --- | --- |
+                | **1. Accuracy** | 4 points | How accurately the answer reflects the content of the passage. |
+                | **2. Completeness** | 2 points | How thoroughly the answer covers all aspects of the question. |
+                | **3. Clarity** | 1 point | How clear and understandable the answer is. |
+                | **4. Language Quality** | 3 points | Grammar, spelling, and appropriate word choice. |
+                
+                ### 📏 Scoring Scale Reference
+                
+                | Score | Description |
+                | --- | --- |
+                | **10 points** | Answer is accurate, complete, clear, and has excellent grammar. |
+                | **8-9 points** | Answer is mostly accurate with minor omissions or occasional language errors. |
+                | **6-7 points** | Answer is partially correct but lacks thoroughness or has noticeable language issues. |
+                | **4-5 points** | Answer significantly diverges from passage content or has numerous language errors. |
+                | **1-3 points** | Answer is mostly irrelevant or difficult to understand. |
+                | **0 points** | No answer provided or completely incorrect. |
+                """)
+        else:
+            # Display legacy format feedback
+            st.markdown(feedback)
     
     # Navigation buttons
     st.markdown("---")
@@ -394,39 +609,145 @@ def show_qa_interface():
                 st.session_state.current_question_idx += 1
                 st.rerun()
 
-def transcribe_with_whisper(audio_file):
-    """
-    Transcribe audio using OpenAI's Whisper API
+def main():
+    # Initialize session state
+    init_auth_state()
     
-    Args:
-        audio_file: Audio file uploaded by the user
-        
-    Returns:
-        str: Transcribed text
-    """
-    try:
-        # Create a temporary file to store the audio
-        with tempfile.NamedTemporaryFile(delete=False, suffix='.wav') as temp_audio_file:
-            temp_audio_file.write(audio_file.getvalue())
-            temp_audio_file_path = temp_audio_file.name
-        
-        # Use OpenAI's Whisper API to transcribe the audio
-        client = OpenAI()
-        
-        with open(temp_audio_file_path, "rb") as audio_file:
-            transcription = client.audio.transcriptions.create(
-                model="whisper-1",
-                file=audio_file
-            )
-        
-        # Clean up the temporary file
-        os.unlink(temp_audio_file_path)
-        
-        return transcription.text
+    # Initialize session state variables if they don't exist
+    if 'questions' not in st.session_state:
+        st.session_state.questions = []
+    if 'current_passage' not in st.session_state:
+        st.session_state.current_passage = DEFAULT_PASSAGE
+    if 'current_question_idx' not in st.session_state:
+        st.session_state.current_question_idx = 0
+    if 'answers' not in st.session_state:
+        st.session_state.answers = {}
+    if 'feedback' not in st.session_state:
+        st.session_state.feedback = {}
+    if 'speech_transcript' not in st.session_state:
+        st.session_state.speech_transcript = ""
     
-    except Exception as e:
-        st.error(f"Error during transcription: {str(e)}")
-        return None
+    # Handle speech recognition messages from JavaScript
+    if 'speech_transcript' in st.query_params:
+        transcript = st.query_params['speech_transcript']
+        if transcript:
+            st.session_state.speech_transcript = transcript
+            # Clear the query param to avoid issues with refreshes
+            del st.query_params['speech_transcript']
+    
+    # Create database instance
+    db = Database()
+    
+    # Sidebar configuration
+    st.sidebar.header("Settings")
+    api_key = st.sidebar.text_input("OpenAI API Key", 
+                                   value=os.getenv("OPENAI_API_KEY", ""), 
+                                   type="password")
+    if api_key:
+        os.environ["OPENAI_API_KEY"] = api_key
+    
+    # Check if user is authenticated
+    if not st.session_state.authenticated:
+        # Show login/register pages
+        if st.session_state.show_login:
+            if login_page():
+                st.rerun()
+        elif st.session_state.show_register:
+            if register_page():
+                st.rerun()
+        return
+    
+    # User is authenticated - show application
+    st.title("Interactive English Learning")
+    
+    # Show user info in sidebar
+    st.sidebar.success(f"Logged in as: {st.session_state.user['username']}")
+    
+    # Navigation menu in sidebar
+    st.sidebar.header("Navigation")
+    app_mode = st.sidebar.radio(
+        "Choose a feature",
+        ["Practice Reading", "Learning History", "Vocabulary Notebook"]
+    )
+    
+    # Logout button
+    if st.sidebar.button("Logout"):
+        # Save current session before logout if needed
+        if st.session_state.authenticated and st.session_state.user and 'questions' in st.session_state:
+            save_session(db, st.session_state.user["_id"])
+        logout()
+        st.rerun()
+    
+    # Main content based on selected mode
+    if app_mode == "Practice Reading":
+        # If we don't have questions yet, show the passage input and question generation interface
+        if not st.session_state.questions:
+            # Article input
+            st.header("Reading Material")
+            passage = st.text_area("Enter or paste an English passage", value=DEFAULT_PASSAGE, height=200)
+            
+            num_questions = st.slider("Number of questions to generate", 1, 5, 3)
+            
+            if st.button("Generate Questions"):
+                if not passage.strip():
+                    st.warning("Please enter a passage")
+                    return
+                    
+                with st.spinner("Generating questions..."):
+                    try:
+                        # Use the question generation function
+                        questions = generate_questions(passage, num_questions)
+                        
+                        # Save to session state
+                        st.session_state.questions = questions
+                        st.session_state.current_passage = passage
+                        st.session_state.current_question_idx = 0
+                        st.session_state.answers = {}
+                        st.session_state.feedback = {}
+                        
+                        # Force a rerun to update the UI
+                        st.rerun()
+                        
+                    except Exception as e:
+                        st.error(f"Error generating questions: {str(e)}")
+                        st.error("Please make sure your OpenAI API key is valid and has sufficient credits.")
+        
+        # If we have questions, show the Q&A interface
+        else:
+            # Show Q&A interface
+            show_qa_interface(db)
+            
+            # Add reset button at the bottom
+            if st.button("Reset and Generate New Questions"):
+                # Save current session before reset
+                if st.session_state.authenticated and st.session_state.user:
+                    save_session(db, st.session_state.user["_id"])
+                
+                # Clear session state for questions
+                st.session_state.questions = []
+                st.session_state.answers = {}
+                st.session_state.feedback = {}
+                st.session_state.current_question_idx = 0
+                
+                # Force a rerun to refresh the UI
+                st.rerun()
+    
+    elif app_mode == "Learning History":
+        # Show learning history
+        if st.session_state.authenticated and st.session_state.user:
+            show_history(db, st.session_state.user["_id"])
+        else:
+            st.warning("You need to be logged in to view your learning history.")
+    
+    elif app_mode == "Vocabulary Notebook":
+        # Show vocabulary notebook
+        if st.session_state.authenticated and st.session_state.user:
+            vocabulary_notebook(db, st.session_state.user["_id"])
+        else:
+            st.warning("You need to be logged in to access your vocabulary notebook.")
+
+    # Close database connection
+    db.close()
 
 if __name__ == "__main__":
     main()

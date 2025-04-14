@@ -1,4 +1,8 @@
-langchain
-openai
-python-dotenv
-streamlit
+streamlit>=1.10.0
+openai>=1.0.0
+langchain>=0.0.335
+python-dotenv>=0.19.0
+pymongo>=4.3.0
+dnspython>=2.3.0
+bcrypt>=4.0.0
+whisper>=1.0.0
