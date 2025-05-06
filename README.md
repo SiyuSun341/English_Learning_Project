@@ -44,21 +44,21 @@ MONGODB_URI=your_mongodb_connection_string
 streamlit run app.py
 
 ## Project Structure
-interactive-english-learning/
-├── app.py                  # Main application entry point
-├── requirements.txt        # Project dependencies
-├── README.md               # Project documentation
-├── .env                    # Environment variables (create this file)
-├── static/                 # Static assets
-│   └── audio/              # Audio resources
-├── utils/                  # Utility modules
-│   ├── init.py
-│   ├── auth.py             # Authentication functionality
-│   ├── database.py         # Database operations
-│   ├── language_model.py   # AI language model interactions
-│   ├── speech_input.py     # Speech recording functionality
-│   └── speech_to_text.py   # Speech transcription
-└── venv/                   # Virtual environment (create this directory)
+###interactive-english-learning/
+###├── app.py                  # Main application entry point
+###├── requirements.txt        # Project dependencies
+###├── README.md               # Project documentation
+###├── .env                    # Environment variables (create this file)
+###├── static/                 # Static assets
+###│   └── audio/              # Audio resources
+###├── utils/                  # Utility modules
+###│   ├── init.py
+###│   ├── auth.py             # Authentication functionality
+###│   ├── database.py         # Database operations
+###│   ├── language_model.py   # AI language model interactions
+###│   ├── speech_input.py     # Speech recording functionality
+###│   └── speech_to_text.py   # Speech transcription
+###└── venv/                   # Virtual environment (create this directory)
 
 ## Usage Guide
 
