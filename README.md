@@ -45,6 +45,7 @@ streamlit run app.py
 
 ## Project Structure
 interactive-english-learning/
+
 ├── app.py                  # Main application entry point
 
 ├── requirements.txt        # Project dependencies
