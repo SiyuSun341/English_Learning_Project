@@ -5,7 +5,7 @@ import os
 from pymongo import MongoClient
 from dotenv import load_dotenv
 import bcrypt
-from datetime import datetime
+from datetime import datetime, timedelta
 import json
 
 # Load environment variables
@@ -249,6 +249,88 @@ class Database:
         except Exception as e:
             print(f"Error saving vocabulary item: {str(e)}")
             return None
+    
+    def mark_word_reviewed(self, user_id, word_id):
+        """
+        Mark a vocabulary word as reviewed, updating the review count and dates
+        
+        Args:
+            user_id: User's ID
+            word_id: Vocabulary word's ID
+            
+        Returns:
+            dict: Updated vocabulary document or None if update failed
+        """
+        try:
+            # Get the current vocabulary item
+            vocab_item = self.vocabulary.find_one({
+                "_id": word_id,
+                "user_id": user_id
+            })
+            
+            if not vocab_item:
+                return None
+            
+            # Calculate current review count and next review date
+            current_review_count = vocab_item.get("review_count", 0) + 1
+            
+            # Calculate next review date based on spaced repetition principle
+            # The more times a word is reviewed, the longer until it needs to be reviewed again
+            if current_review_count == 1:
+                next_review = datetime.now() + timedelta(days=1)  # First review: review again tomorrow
+            elif current_review_count == 2:
+                next_review = datetime.now() + timedelta(days=3)  # Second review: review in 3 days
+            elif current_review_count == 3:
+                next_review = datetime.now() + timedelta(days=7)  # Third review: review in a week
+            elif current_review_count == 4:
+                next_review = datetime.now() + timedelta(days=14)  # Fourth review: review in 2 weeks
+            else:
+                next_review = datetime.now() + timedelta(days=30)  # Fifth+ review: review in a month
+            
+            # Update the vocabulary item
+            self.vocabulary.update_one(
+                {"_id": word_id},
+                {
+                    "$set": {
+                        "review_count": current_review_count,
+                        "last_review": datetime.now(),
+                        "next_review": next_review
+                    }
+                }
+            )
+            
+            # Return the updated vocabulary item
+            return self.vocabulary.find_one({"_id": word_id})
+            
+        except Exception as e:
+            print(f"Error marking word as reviewed: {str(e)}")
+            return None
+    
+    def get_words_due_for_review(self, user_id):
+        """
+        Get vocabulary words that are due for review (next_review date <= current date)
+        
+        Args:
+            user_id: User's ID
+            
+        Returns:
+            list: List of vocabulary documents due for review
+        """
+        try:
+            # Find vocabulary items due for review
+            due_items = list(self.vocabulary.find({
+                "user_id": user_id,
+                "$or": [
+                    {"next_review": {"$lte": datetime.now()}},
+                    {"next_review": None}
+                ]
+            }))
+            
+            return due_items
+            
+        except Exception as e:
+            print(f"Error getting words due for review: {str(e)}")
+            return []
     
     def get_user_vocabulary(self, user_id):
         """

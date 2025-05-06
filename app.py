@@ -280,72 +280,529 @@ def save_session(db, user_id):
     return False
 
 def show_history(db, user_id):
-    """Show user's learning history"""
+    """Show user's learning history with enhanced statistics and visualizations"""
     st.header("Your Learning History")
+    
+    # Create tabs for history view and statistics
+    history_tab, stats_tab = st.tabs(["Session History", "Learning Analytics"])
     
     # Get user's learning sessions
     sessions = db.get_user_learning_sessions(user_id)
     
-    if not sessions:
-        st.info("You haven't completed any learning sessions yet.")
-        return
+    # Also get vocabulary data for some analytics
+    vocab_items = db.get_user_vocabulary(user_id)
     
-    # Display sessions in reverse chronological order
-    for idx, session in enumerate(sorted(sessions, key=lambda x: x.get('created_at', ''), reverse=True)):
-        created_at = session.get('created_at', datetime.now())
-        formatted_date = created_at.strftime("%B %d, %Y at %I:%M %p")
+    with history_tab:
+        if not sessions:
+            st.info("You haven't completed any learning sessions yet.")
+            return
         
-        with st.expander(f"Session {idx+1} - {formatted_date}"):
-            # Calculate statistics
-            num_questions = len(session.get('questions', []))
-            num_answered = len(session.get('answers', {}))
-            score = session.get('score', 0)
+        # Display sessions in reverse chronological order
+        for idx, session in enumerate(sorted(sessions, key=lambda x: x.get('created_at', ''), reverse=True)):
+            created_at = session.get('created_at', datetime.now())
+            formatted_date = created_at.strftime("%B %d, %Y at %I:%M %p")
             
-            # Show session stats
-            st.write(f"**Questions:** {num_questions}")
-            st.write(f"**Questions Answered:** {num_answered}")
-            st.write(f"**Score:** {score}/100")
-            
-            # Add a button to show details
-            if st.button(f"View Details", key=f"view_details_{idx}"):
-                st.subheader("Reading Passage")
-                st.write(session.get('passage', 'No passage available'))
+            with st.expander(f"Session {idx+1} - {formatted_date}"):
+                # Calculate statistics
+                num_questions = len(session.get('questions', []))
+                num_answered = len(session.get('answers', {}))
+                score = session.get('score', 0)
                 
-                st.subheader("Questions and Answers")
-                questions = session.get('questions', [])
-                answers = session.get('answers', {})
-                feedback = session.get('feedback', {})
+                # Show session stats
+                st.write(f"**Questions:** {num_questions}")
+                st.write(f"**Questions Answered:** {num_answered}")
+                st.write(f"**Score:** {score}/100")
                 
-                for q_idx, question in enumerate(questions):
-                    st.markdown(f"**Question {q_idx+1}:** {question}")
+                # Add a button to show details
+                if st.button(f"View Details", key=f"view_details_{idx}"):
+                    st.subheader("Reading Passage")
+                    st.write(session.get('passage', 'No passage available'))
                     
-                    # Show answer if available
-                    if str(q_idx) in answers:
-                        st.markdown(f"**Your Answer:** {answers[str(q_idx)]}")
-                    else:
-                        st.write("You did not answer this question.")
+                    st.subheader("Questions and Answers")
+                    questions = session.get('questions', [])
+                    answers = session.get('answers', {})
+                    feedback = session.get('feedback', {})
                     
-                    # Show feedback if available
-                    if str(q_idx) in feedback:
-                        feedback_item = feedback[str(q_idx)]
-                        st.subheader("Feedback:")
+                    for q_idx, question in enumerate(questions):
+                        st.markdown(f"**Question {q_idx+1}:** {question}")
                         
-                        # Check if feedback is in the new format or old format
-                        if isinstance(feedback_item, dict) and "formatted_feedback" in feedback_item:
-                            # Display the formatted feedback
-                            st.markdown(feedback_item["formatted_feedback"])
+                        # Show answer if available
+                        if str(q_idx) in answers:
+                            st.markdown(f"**Your Answer:** {answers[str(q_idx)]}")
                         else:
-                            # Display legacy format feedback
-                            st.markdown(f"**Feedback:** {feedback_item}")
+                            st.write("You did not answer this question.")
+                        
+                        # Show feedback if available
+                        if str(q_idx) in feedback:
+                            feedback_item = feedback[str(q_idx)]
+                            st.subheader("Feedback:")
+                            
+                            # Check if feedback is in the new format or old format
+                            if isinstance(feedback_item, dict) and "formatted_feedback" in feedback_item:
+                                # Display the formatted feedback
+                                st.markdown(feedback_item["formatted_feedback"])
+                            else:
+                                # Display legacy format feedback
+                                st.markdown(f"**Feedback:** {feedback_item}")
+                        
+                        st.markdown("---")
+    
+    with stats_tab:
+        if not sessions:
+            st.info("You need to complete some learning sessions to see analytics.")
+            return
+        
+        st.subheader("Learning Performance Analytics")
+        
+        # Process session data for analysis
+        session_dates = []
+        session_scores = []
+        dimension_scores = {
+            "accuracy": [],
+            "completeness": [],
+            "clarity": [],
+            "language": []
+        }
+        
+        # Process all sessions for time-based data
+        for session in sorted(sessions, key=lambda x: x.get('created_at', datetime.now())):
+            session_date = session.get('created_at', datetime.now())
+            session_dates.append(session_date)
+            session_scores.append(session.get('score', 0))
+            
+            # Process feedback for dimension scores
+            feedback = session.get('feedback', {})
+            session_accuracy = []
+            session_completeness = []
+            session_clarity = []
+            session_language = []
+            
+            for idx, item in feedback.items():
+                if isinstance(item, dict) and "data" in item:
+                    data = item.get("data", {})
+                    if "accuracy_score" in data:
+                        session_accuracy.append(data["accuracy_score"])
+                    if "completeness_score" in data:
+                        session_completeness.append(data["completeness_score"])
+                    if "clarity_score" in data:
+                        session_clarity.append(data["clarity_score"])
+                    if "language_score" in data:
+                        session_language.append(data["language_score"])
+            
+            # Calculate averages for this session and add to overall lists
+            if session_accuracy:
+                dimension_scores["accuracy"].append(sum(session_accuracy) / len(session_accuracy))
+            if session_completeness:
+                dimension_scores["completeness"].append(sum(session_completeness) / len(session_completeness))
+            if session_clarity:
+                dimension_scores["clarity"].append(sum(session_clarity) / len(session_clarity))
+            if session_language:
+                dimension_scores["language"].append(sum(session_language) / len(session_language))
+        
+        # Process vocabulary data
+        vocab_dates = []
+        vocab_counts = []
+        vocab_review_counts = []
+        
+        if vocab_items:
+            # Sort vocab items by creation date
+            sorted_vocab = sorted(vocab_items, key=lambda x: x.get('created_at', datetime.now()))
+            cumulative_count = 0
+            
+            for item in sorted_vocab:
+                created_at = item.get('created_at', datetime.now())
+                vocab_dates.append(created_at)
+                cumulative_count += 1
+                vocab_counts.append(cumulative_count)
+                vocab_review_counts.append(item.get('review_count', 0))
+        
+        # Create a dictionary to track activity by date
+        activity_by_date = {}
+        
+        # Process sessions for activity heatmap
+        for session in sessions:
+            session_date = session.get('created_at', datetime.now())
+            date_str = session_date.strftime('%Y-%m-%d')
+            activity_by_date[date_str] = activity_by_date.get(date_str, 0) + 1
+        
+        # Process vocabulary additions for activity heatmap
+        for item in vocab_items:
+            created_at = item.get('created_at', datetime.now())
+            date_str = created_at.strftime('%Y-%m-%d')
+            activity_by_date[date_str] = activity_by_date.get(date_str, 0) + 0.5  # Count vocab additions as 0.5 activity
+            
+            # Also count reviews
+            if item.get('last_review'):
+                review_date = item.get('last_review')
+                date_str = review_date.strftime('%Y-%m-%d')
+                activity_by_date[date_str] = activity_by_date.get(date_str, 0) + 0.3  # Count reviews as 0.3 activity
+        
+        # Now create the visualizations
+        
+        # 1. Time Series of Scores
+        st.subheader("Score Progress Over Time")
+        if len(session_dates) > 1:
+            # Convert to format suitable for Streamlit charts
+            score_chart_data = {
+                "date": [d.strftime("%Y-%m-%d") for d in session_dates],
+                "score": session_scores
+            }
+            
+            # Create a DataFrame for the chart
+            import pandas as pd
+            score_df = pd.DataFrame(score_chart_data)
+            
+            # Create the chart
+            st.line_chart(score_df.set_index("date"))
+            
+            # Add some insights
+            avg_score = sum(session_scores) / len(session_scores)
+            recent_avg = sum(session_scores[-3:]) / min(len(session_scores), 3) if session_scores else 0
+            
+            st.write(f"**Average Score:** {avg_score:.1f}/100")
+            
+            if recent_avg > avg_score:
+                st.success(f"Your recent average of {recent_avg:.1f} is higher than your overall average. Great improvement!")
+            elif recent_avg < avg_score:
+                st.info(f"Your recent average of {recent_avg:.1f} is lower than your overall average. Consider reviewing earlier materials.")
+        else:
+            st.info("Complete more learning sessions to see your score progress over time.")
+        
+        # 2. Radar Chart for Dimension Scores
+        st.subheader("Performance by Dimension")
+        
+        # Check if we have dimension data
+        if (dimension_scores["accuracy"] and dimension_scores["completeness"] and 
+            dimension_scores["clarity"] and dimension_scores["language"]):
+            
+            # Calculate averages for each dimension
+            avg_accuracy = sum(dimension_scores["accuracy"]) / len(dimension_scores["accuracy"])
+            avg_completeness = sum(dimension_scores["completeness"]) / len(dimension_scores["completeness"])
+            avg_clarity = sum(dimension_scores["clarity"]) / len(dimension_scores["clarity"])
+            avg_language = sum(dimension_scores["language"]) / len(dimension_scores["language"])
+            
+            # Create radar chart using Plotly
+            import plotly.graph_objects as go
+            import numpy as np
+            
+            # Normalize scores to percentages for the radar chart
+            accuracy_pct = (avg_accuracy / 4) * 100
+            completeness_pct = (avg_completeness / 2) * 100
+            clarity_pct = (avg_clarity / 1) * 100
+            language_pct = (avg_language / 3) * 100
+            
+            categories = ['Accuracy', 'Completeness', 'Clarity', 'Language Quality']
+            values = [accuracy_pct, completeness_pct, clarity_pct, language_pct]
+            
+            fig = go.Figure()
+            
+            fig.add_trace(go.Scatterpolar(
+                r=values,
+                theta=categories,
+                fill='toself',
+                name='Average Performance'
+            ))
+            
+            fig.update_layout(
+                polar=dict(
+                    radialaxis=dict(
+                        visible=True,
+                        range=[0, 100]
+                    )
+                ),
+                showlegend=False
+            )
+            
+            st.plotly_chart(fig)
+            
+            # Display insights
+            st.write("**Dimension Analysis:**")
+            
+            dimensions = [
+                {"name": "Accuracy", "score": avg_accuracy, "max": 4, "color": "blue" if avg_accuracy >= 3 else "orange" if avg_accuracy >= 2 else "red"},
+                {"name": "Completeness", "score": avg_completeness, "max": 2, "color": "blue" if avg_completeness >= 1.5 else "orange" if avg_completeness >= 1 else "red"},
+                {"name": "Clarity", "score": avg_clarity, "max": 1, "color": "blue" if avg_clarity >= 0.75 else "orange" if avg_clarity >= 0.5 else "red"},
+                {"name": "Language Quality", "score": avg_language, "max": 3, "color": "blue" if avg_language >= 2.25 else "orange" if avg_language >= 1.5 else "red"}
+            ]
+            
+            # Sort dimensions by performance (worst to best)
+            sorted_dimensions = sorted(dimensions, key=lambda x: x["score"] / x["max"])
+            
+            # Show strongest and weakest areas
+            if sorted_dimensions:
+                weakest = sorted_dimensions[0]
+                strongest = sorted_dimensions[-1]
+                
+                st.markdown(f"🔥 **Strongest area:** {strongest['name']} ({strongest['score']:.2f}/{strongest['max']})")
+                st.markdown(f"🔍 **Area for improvement:** {weakest['name']} ({weakest['score']:.2f}/{weakest['max']})")
+                
+                # Provide specific advice based on weakest area
+                if weakest["name"] == "Accuracy":
+                    st.info("**Tip:** Focus on carefully reading and understanding the passage before answering questions. Try highlighting key information while reading.")
+                elif weakest["name"] == "Completeness":
+                    st.info("**Tip:** Make sure to address all parts of the questions in your answers. Consider creating bullet points for complex questions before writing your full answer.")
+                elif weakest["name"] == "Clarity":
+                    st.info("**Tip:** Structure your answers with clear paragraphs and use transition words to connect ideas. Read your answers aloud to check if they sound clear.")
+                elif weakest["name"] == "Language Quality":
+                    st.info("**Tip:** Take time to proofread your answers before submitting. Pay attention to verb tenses and subject-verb agreement, which are common error areas.")
+        else:
+            st.info("Complete more detailed feedback sessions to see your performance by dimension.")
+        
+        # 3. Vocabulary Growth Chart
+        st.subheader("Vocabulary Growth")
+        if vocab_dates and vocab_counts:
+            # Convert to format suitable for Streamlit charts
+            vocab_chart_data = {
+                "date": [d.strftime("%Y-%m-%d") for d in vocab_dates],
+                "count": vocab_counts
+            }
+            
+            # Create a DataFrame for the chart
+            import pandas as pd
+            vocab_df = pd.DataFrame(vocab_chart_data)
+            
+            # Create the chart
+            st.line_chart(vocab_df.set_index("date"))
+            
+            # Add insights
+            st.write(f"**Total vocabulary items:** {len(vocab_items)}")
+            
+            # Calculate words added in the last 7 days
+            from datetime import timedelta
+            one_week_ago = datetime.now() - timedelta(days=7)
+            recent_vocab = sum(1 for item in vocab_items if item.get('created_at', datetime.now()) > one_week_ago)
+            
+            st.write(f"**Words added in the last 7 days:** {recent_vocab}")
+            
+            # Calculate review statistics
+            total_reviews = sum(vocab_review_counts)
+            reviewed_words = sum(1 for count in vocab_review_counts if count > 0)
+            never_reviewed = len(vocab_items) - reviewed_words
+            
+            st.write(f"**Total reviews:** {total_reviews}")
+            st.write(f"**Words never reviewed:** {never_reviewed} ({(never_reviewed/len(vocab_items))*100:.1f}% of your vocabulary)")
+            
+            if never_reviewed > 0:
+                st.warning(f"You have {never_reviewed} words that haven't been reviewed yet. Regular review is key to vocabulary retention!")
+        else:
+            st.info("Add words to your vocabulary notebook to track vocabulary growth.")
+        
+        # 4. Activity Heatmap
+        st.subheader("Learning Activity Calendar")
+        if activity_by_date:
+            # Create a date range for the heatmap
+            import pandas as pd
+            from datetime import timedelta
+            
+            # Get min and max dates from activity data
+            dates = [datetime.strptime(date_str, '%Y-%m-%d') for date_str in activity_by_date.keys()]
+            min_date = min(dates)
+            max_date = max(dates)
+            
+            # Generate date range with zero activity
+            all_dates = []
+            current_date = min_date
+            while current_date <= max_date:
+                date_str = current_date.strftime('%Y-%m-%d')
+                all_dates.append(date_str)
+                current_date += timedelta(days=1)
+            
+            # Create complete dataset with activity levels
+            complete_data = {
+                "date": all_dates,
+                "activity": [activity_by_date.get(date_str, 0) for date_str in all_dates]
+            }
+            
+            # Create DataFrame
+            activity_df = pd.DataFrame(complete_data)
+            
+            # Add year and day columns
+            activity_df['dt'] = pd.to_datetime(activity_df['date'])
+            activity_df['year'] = activity_df['dt'].dt.year
+            activity_df['month'] = activity_df['dt'].dt.month
+            activity_df['day'] = activity_df['dt'].dt.day
+            activity_df['weekday'] = activity_df['dt'].dt.weekday
+            
+            # Create heatmap using Plotly
+            import plotly.express as px
+            
+            # Create one heatmap per year
+            years = activity_df['year'].unique()
+            
+            for year in years:
+                year_data = activity_df[activity_df['year'] == year]
+                
+                # Create a pivot table for the heatmap
+                pivot_data = year_data.pivot_table(
+                    values='activity', 
+                    index='weekday', 
+                    columns='day', 
+                    aggfunc='sum'
+                )
+                
+                # Replace weekday numbers with names
+                weekday_names = ['Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday']
+                pivot_data.index = [weekday_names[i] for i in pivot_data.index]
+                
+                # Create heatmap
+                fig = px.imshow(
+                    pivot_data,
+                    labels=dict(x="Day of Month", y="Day of Week", color="Activity"),
+                    title=f"Activity Calendar - {year}",
+                    color_continuous_scale="Viridis"
+                )
+                
+                st.plotly_chart(fig, use_container_width=True)
+            
+            # Show activity insights
+            active_days = sum(1 for level in activity_by_date.values() if level > 0)
+            total_activity = sum(activity_by_date.values())
+            
+            st.write(f"**Active learning days:** {active_days}")
+            st.write(f"**Average activity per active day:** {total_activity/active_days:.1f}")
+            
+            # Find most active day of week
+            weekday_activity = [0] * 7  # Initialize counts for each day of the week
+            for date_str, activity in activity_by_date.items():
+                date_obj = datetime.strptime(date_str, '%Y-%m-%d')
+                weekday = date_obj.weekday()
+                weekday_activity[weekday] += activity
+            
+            most_active_weekday = weekday_names[weekday_activity.index(max(weekday_activity))]
+            st.write(f"**Most active day of the week:** {most_active_weekday}")
+            
+            # Identify current streak
+            sorted_active_dates = sorted([datetime.strptime(date_str, '%Y-%m-%d') for date_str in activity_by_date.keys()])
+            
+            if sorted_active_dates:
+                today = datetime.now().replace(hour=0, minute=0, second=0, microsecond=0)
+                
+                # Check if today is active
+                today_str = today.strftime('%Y-%m-%d')
+                yesterday = today - timedelta(days=1)
+                yesterday_str = yesterday.strftime('%Y-%m-%d')
+                
+                if today_str in activity_by_date:
+                    # Start counting from today
+                    streak_start = today
+                    streak = 1
+                elif yesterday_str in activity_by_date:
+                    # Start counting from yesterday
+                    streak_start = yesterday
+                    streak = 1
+                else:
+                    streak = 0
+                
+                # Count backward from streak_start
+                current_date = streak_start - timedelta(days=1)
+                while streak > 0 and current_date.strftime('%Y-%m-%d') in activity_by_date:
+                    streak += 1
+                    current_date -= timedelta(days=1)
+                
+                if streak > 0:
+                    st.success(f"🔥 **Current streak:** {streak} day{'s' if streak > 1 else ''} of learning activity!")
+                else:
+                    last_active = sorted_active_dates[-1]
+                    days_since = (today - last_active).days
+                    st.warning(f"Your last learning activity was {days_since} day{'s' if days_since > 1 else ''} ago. Log in to keep your streak going!")
+        else:
+            st.info("Complete more learning activities to see your activity calendar.")
+        
+        # Import the function at the top of your file if not already imported
+        from utils.language_model import generate_personalized_insights
+        
+        # Add personalized insights section
+        st.subheader("Personalized Learning Insights")
+        
+        insights_container = st.container()
+        if sessions:
+            # Collect data for insights
+            total_questions = sum(len(session.get('questions', [])) for session in sessions)
+            total_answers = sum(len(session.get('answers', {})) for session in sessions)
+            completion_rate = (total_answers / total_questions) if total_questions > 0 else 0
+            avg_score = sum(session_scores) / len(session_scores) if session_scores else 0
+            
+            # Prepare user data for insights generation
+            user_data = {
+                'session_count': len(sessions),
+                'total_questions': total_questions,
+                'total_answers': total_answers,
+                'completion_rate': completion_rate,
+                'avg_score': avg_score,
+                'recent_trend': "improving" if recent_avg > avg_score else "declining" if recent_avg < avg_score else "stable",
+            }
+            
+            # Add additional data if available
+            if 'most_active_weekday' in locals():
+                user_data['most_active_day'] = most_active_weekday
+            
+            if 'streak' in locals():
+                user_data['current_streak'] = streak
+            
+            if vocab_items:
+                user_data['vocab_count'] = len(vocab_items)
+                
+                # Add vocab stats if available
+                if 'recent_vocab' in locals():
+                    user_data['recent_vocab'] = recent_vocab
+                
+                if 'never_reviewed' in locals():
+                    user_data['never_reviewed'] = never_reviewed
+            
+            # Add dimension scores if available
+            if 'sorted_dimensions' in locals() and sorted_dimensions:
+                user_data['accuracy_score'] = next((d["score"] for d in sorted_dimensions if d["name"] == "Accuracy"), 0)
+                user_data['completeness_score'] = next((d["score"] for d in sorted_dimensions if d["name"] == "Completeness"), 0)
+                user_data['clarity_score'] = next((d["score"] for d in sorted_dimensions if d["name"] == "Clarity"), 0)
+                user_data['language_score'] = next((d["score"] for d in sorted_dimensions if d["name"] == "Language Quality"), 0)
+                user_data['strongest_dimension'] = sorted_dimensions[-1]["name"] if sorted_dimensions else "unknown"
+                user_data['weakest_dimension'] = sorted_dimensions[0]["name"] if sorted_dimensions else "unknown"
+            
+            # Generate insights using OpenAI
+            with st.spinner("Generating personalized insights..."):
+                insights = generate_personalized_insights(user_data)
+            
+            if insights:
+                # Display the API-generated insights
+                with insights_container:
+                    st.write(f"**Assessment:** {insights['assessment']}")
                     
-                    st.markdown("---")
+                    # Display strengths and areas for improvement
+                    col1, col2 = st.columns(2)
+                    with col1:
+                        st.success("**Strengths:**")
+                        for strength in insights['strengths']:
+                            st.markdown(f"- ✅ {strength}")
+                    
+                    with col2:
+                        st.info("**Areas for Improvement:**")
+                        for area in insights['areas_for_improvement']:
+                            st.markdown(f"- 🔍 {area}")
+                    
+                    # Display personalized recommendations
+                    st.write("**Recommended Learning Activities:**")
+                    for i, rec in enumerate(insights['recommendations']):
+                        with st.expander(f"{i+1}. {rec['title']} ({rec['difficulty'].capitalize()})"):
+                            st.write(rec['description'])
+                    
+                    # Display study routine suggestion
+                    st.write("**Suggested Study Routine:**")
+                    st.info(insights['study_routine'])
+            else:
+                # Fallback if API generation fails
+                with insights_container:
+                    st.info("Complete more learning sessions to receive personalized insights and recommendations.")
+        else:
+            with insights_container:
+                st.info("Complete some learning sessions to receive personalized insights and recommendations.")
+
 
 def vocabulary_notebook(db, user_id):
     """Show and manage vocabulary notebook"""
     st.header("Vocabulary Notebook")
     
     # Tabs for different vocabulary functions
-    tab1, tab2 = st.tabs(["My Vocabulary", "Add New Word"])
+    tab1, tab2, tab3 = st.tabs(["My Vocabulary", "Add New Word", "Words Due for Review"])
     
     with tab1:
         # Get user's vocabulary
@@ -361,12 +818,38 @@ def vocabulary_notebook(db, user_id):
                     add_count = item.get('add_count', 1)
                     add_count_display = f" (Added {add_count} times)" if add_count > 1 else ""
                     
+                    # Display review information
+                    review_count = item.get('review_count', 0)
+                    last_review = item.get('last_review')
+                    next_review = item.get('next_review')
+                    
+                    # Format header with word information
                     st.markdown(f"### {idx+1}. {item['word']}{add_count_display}")
+                    
+                    # Display definition and examples
                     st.write(f"**Definition:** {item['definition']}")
                     
                     st.write("**Examples:**")
                     for example in item['examples']:
                         st.write(f"- {example}")
+                    
+                    # Display review information in a colored box
+                    review_info_col1, review_info_col2 = st.columns(2)
+                    
+                    with review_info_col1:
+                        if review_count > 0:
+                            st.info(f"**Reviewed:** {review_count} time{'s' if review_count > 1 else ''}")
+                            if last_review:
+                                st.info(f"**Last reviewed:** {last_review.strftime('%B %d, %Y at %I:%M %p')}")
+                        else:
+                            st.warning("**Not yet reviewed**")
+                    
+                    with review_info_col2:
+                        if next_review:
+                            if next_review <= datetime.now():
+                                st.error(f"**Review due!** Was due on {next_review.strftime('%B %d, %Y')}")
+                            else:
+                                st.success(f"**Next review:** {next_review.strftime('%B %d, %Y')}")
                     
                     # Show source if available in a simple collapsible section (not an expander)
                     if item.get('source_passage'):
@@ -375,9 +858,18 @@ def vocabulary_notebook(db, user_id):
                     
                     # Add review button
                     if st.button(f"Mark as Reviewed", key=f"review_{idx}"):
-                        # Update review count and dates in database
-                        # (This functionality would need to be added to the database class)
-                        st.success(f"'{item['word']}' marked as reviewed!")
+                        # Update review count and dates in database using the new method
+                        updated_item = db.mark_word_reviewed(user_id, item["_id"])
+                        if updated_item:
+                            review_count = updated_item.get("review_count", 0)
+                            next_review_date = updated_item.get("next_review")
+                            next_review_str = next_review_date.strftime('%B %d, %Y') if next_review_date else "Not scheduled"
+                            
+                            st.success(f"'{item['word']}' marked as reviewed! This word has been reviewed {review_count} times. Next review: {next_review_str}")
+                            # Rerun to refresh the page with updated data
+                            st.rerun()
+                        else:
+                            st.error(f"Error updating review status for '{item['word']}'")
                     
                     # Add a divider between words
                     st.markdown("---")
@@ -440,6 +932,113 @@ def vocabulary_notebook(db, user_id):
                         st.error("Failed to add word to notebook.")
                 except Exception as e:
                     st.error(f"Error saving to database: {str(e)}")
+    
+    with tab3:
+        # Get all vocabulary items for filtering
+        all_vocab_items = db.get_user_vocabulary(user_id)
+        
+        # Add filtering controls
+        st.subheader("Filter Words by Review Count")
+        col1, col2 = st.columns(2)
+        
+        with col1:
+            # Minimum reviews filter input
+            min_reviews = st.number_input("Minimum Reviews", 
+                                          min_value=0, 
+                                          max_value=10, 
+                                          value=0,
+                                          step=1)
+        
+        with col2:
+            # Find the maximum review count to set as upper limit
+            max_possible = max([item.get('review_count', 0) for item in all_vocab_items]) if all_vocab_items else 10
+            # Maximum reviews filter input
+            max_reviews = st.number_input("Maximum Reviews", 
+                                          min_value=0, 
+                                          max_value=max_possible, 
+                                          value=max_possible,
+                                          step=1)
+        
+        # Option to show all words or only those due for review
+        show_only_due = st.checkbox("Show only words due for review", value=True)
+        
+        # Apply filters
+        if show_only_due:
+            # Get words due for review and apply review count filter
+            due_words = db.get_words_due_for_review(user_id)
+            filtered_words = [item for item in due_words 
+                              if min_reviews <= item.get('review_count', 0) <= max_reviews]
+        else:
+            # Apply review count filter to all words
+            filtered_words = [item for item in all_vocab_items 
+                              if min_reviews <= item.get('review_count', 0) <= max_reviews]
+        
+        # Display filtered results
+        if not filtered_words:
+            if show_only_due:
+                st.success(f"You have no words with {min_reviews}-{max_reviews} reviews that are due for review.")
+            else:
+                st.info(f"You have no words with {min_reviews}-{max_reviews} reviews in your vocabulary.")
+        else:
+            st.write(f"Found {len(filtered_words)} word{'s' if len(filtered_words) > 1 else ''} matching your criteria.")
+            
+            # Add "Mark All Reviewed" button for batch operations
+            if st.button("Mark All Filtered Words as Reviewed"):
+                updated_count = 0
+                for item in filtered_words:
+                    updated_item = db.mark_word_reviewed(user_id, item["_id"])
+                    if updated_item:
+                        updated_count += 1
+                
+                if updated_count > 0:
+                    st.success(f"Successfully marked {updated_count} word{'s' if updated_count > 1 else ''} as reviewed!")
+                    st.rerun()
+            
+            # Display word list
+            for idx, item in enumerate(filtered_words):
+                with st.container():
+                    col1, col2 = st.columns([3, 1])
+                    
+                    with col1:
+                        # Display word and review information
+                        st.markdown(f"**{idx+1}. {item['word']}**")
+                        review_count = item.get('review_count', 0)
+                        st.info(f"Reviewed: {review_count} time{'s' if review_count > 1 else ''}")
+                        
+                        # Show last review date if available
+                        if item.get('last_review'):
+                            last_review_date = item['last_review'].strftime('%B %d, %Y')
+                            st.info(f"Last reviewed: {last_review_date}")
+                        else:
+                            st.info("Not yet reviewed")
+                        
+                        # Show next review date with appropriate status color
+                        if item.get('next_review'):
+                            if item['next_review'] <= datetime.now():
+                                st.error(f"Review due! Was due on {item['next_review'].strftime('%B %d, %Y')}")
+                            else:
+                                st.success(f"Next review: {item['next_review'].strftime('%B %d, %Y')}")
+                    
+                    with col2:
+                        # Individual review button for each word
+                        if st.button(f"Mark Reviewed", key=f"quick_review_{idx}"):
+                            updated_item = db.mark_word_reviewed(user_id, item["_id"])
+                            if updated_item:
+                                st.success(f"'{item['word']}' marked as reviewed!")
+                                st.rerun()
+                            else:
+                                st.error(f"Error updating review status for '{item['word']}'")
+                    
+                    # Expandable details section
+                    if st.checkbox(f"Show details for '{item['word']}'", key=f"details_{idx}"):
+                        st.write(f"**Definition:** {item['definition']}")
+                        
+                        st.write("**Examples:**")
+                        for example in item['examples']:
+                            st.write(f"- {example}")
+                    
+                    # Add separator between words
+                    st.markdown("---")
 
 def show_qa_interface(db):
     """Show the Q&A interface for answering and getting feedback"""

@@ -399,3 +399,139 @@ def get_word_definition(word):
         # Log the error for debugging
         print(f"Error getting word definition: {str(e)}")
         return None
+
+def generate_personalized_insights(user_data):
+    """
+    Generate personalized learning insights using OpenAI's API
+    
+    Args:
+        user_data (dict): Dictionary containing user learning data
+        
+    Returns:
+        dict: Structured insights with recommendations
+    """
+    try:
+        # Initialize the language model
+        llm = ChatOpenAI(
+            model_name="gpt-3.5-turbo",
+            temperature=0.4  # Lower temperature for more consistent insights
+        )
+        
+        # Create a prompt template for personalized insights
+        prompt_template = PromptTemplate(
+            input_variables=["user_stats", "performance_areas", "vocab_stats", "dimensions"],
+            template="""
+            You are an expert English language learning coach providing personalized insights.
+            
+            Analyze the following learning data and provide personalized insights and recommendations:
+            
+            User Stats:
+            {user_stats}
+            
+            Performance in Different Areas:
+            {performance_areas}
+            
+            Vocabulary Statistics:
+            {vocab_stats}
+            
+            Learning Dimensions Analysis:
+            {dimensions}
+            
+            Based on this data, provide:
+            1. A short assessment of the learner's current strengths and weaknesses (2-3 sentences)
+            2. Three specific, actionable recommendations to improve their English skills
+            3. A study routine suggestion based on their activity patterns
+            
+            Format your response as a JSON with the following structure:
+            {{
+                "assessment": "Your concise assessment here",
+                "strengths": ["Strength 1", "Strength 2"],
+                "areas_for_improvement": ["Area 1", "Area 2"],
+                "recommendations": [
+                    {{
+                        "title": "Recommendation title",
+                        "description": "Detailed recommendation",
+                        "difficulty": "beginner/intermediate/advanced"
+                    }},
+                    // 2 more recommendations
+                ],
+                "study_routine": "Suggested study routine"
+            }}
+            
+            Only return the JSON object, no other text.
+            """,
+        )
+        
+        # Prepare the data to send to the API
+        user_stats = f"""
+        Total reading sessions: {user_data.get('session_count', 0)}
+        Questions attempted: {user_data.get('total_answers', 0)} out of {user_data.get('total_questions', 0)}
+        Completion rate: {user_data.get('completion_rate', 0)*100:.1f}%
+        Average score: {user_data.get('avg_score', 0):.1f}
+        """
+        
+        performance_areas = f"""
+        Recent performance trend: {user_data.get('recent_trend', 'stable')}
+        Most active day of week: {user_data.get('most_active_day', 'unknown')}
+        Current streak: {user_data.get('current_streak', 0)} days
+        """
+        
+        vocab_stats = f"""
+        Total vocabulary items: {user_data.get('vocab_count', 0)}
+        Recently added words: {user_data.get('recent_vocab', 0)}
+        Words never reviewed: {user_data.get('never_reviewed', 0)}
+        """
+        
+        dimensions = f"""
+        Accuracy: {user_data.get('accuracy_score', 0):.2f}/4
+        Completeness: {user_data.get('completeness_score', 0):.2f}/2
+        Clarity: {user_data.get('clarity_score', 0):.2f}/1
+        Language Quality: {user_data.get('language_score', 0):.2f}/3
+        Strongest area: {user_data.get('strongest_dimension', 'unknown')}
+        Weakest area: {user_data.get('weakest_dimension', 'unknown')}
+        """
+        
+        # Create and run the chain
+        chain = LLMChain(llm=llm, prompt=prompt_template)
+        result = chain.run(
+            user_stats=user_stats,
+            performance_areas=performance_areas,
+            vocab_stats=vocab_stats,
+            dimensions=dimensions
+        )
+        
+        # Parse the result as JSON
+        try:
+            # Clean the result to ensure it's valid JSON
+            cleaned_result = result.strip()
+            if cleaned_result.startswith('```json'):
+                cleaned_result = cleaned_result[7:]
+            if cleaned_result.endswith('```'):
+                cleaned_result = cleaned_result[:-3]
+            cleaned_result = cleaned_result.strip()
+            
+            import json
+            insights_data = json.loads(cleaned_result)
+            return insights_data
+            
+        except json.JSONDecodeError as e:
+            # If JSON parsing fails, return basic insights
+            print(f"Error parsing insights JSON: {e}")
+            return {
+                "assessment": "Keep practicing regularly to improve your skills.",
+                "strengths": ["Regular practice"],
+                "areas_for_improvement": ["Complete more sessions for better analysis"],
+                "recommendations": [
+                    {
+                        "title": "Complete more reading sessions",
+                        "description": "Try to finish at least 5 sessions to get better insights",
+                        "difficulty": "beginner"
+                    }
+                ],
+                "study_routine": "Try to practice for 15 minutes daily"
+            }
+        
+    except Exception as e:
+        # Log the error for debugging
+        print(f"Error generating personalized insights: {str(e)}")
+        return None
